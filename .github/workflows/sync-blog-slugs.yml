@@ -24,6 +24,8 @@ jobs:
         run: |
           cd content/blog
           renamed=false
+          has_error=false
+          error_messages=""
 
           for file in *.mdx; do
             [ -f "$file" ] || continue
@@ -35,12 +37,28 @@ jobs:
               filename="${file%.mdx}"
 
               if [ "$filename" != "$slug" ]; then
-                echo "Renaming: $file -> ${slug}.mdx"
-                git mv "$file" "${slug}.mdx"
-                renamed=true
+                target_file="${slug}.mdx"
+
+                # Check if target file already exists (duplicate slug error)
+                if [ -f "$target_file" ]; then
+                  has_error=true
+                  error_messages="${error_messages}ERROR: Cannot rename '$file' to '$target_file' - a file with slug '$slug' already exists!\n"
+                  echo "::error::Cannot rename '$file' to '$target_file' - a file with slug '$slug' already exists!"
+                else
+                  echo "Renaming: $file -> $target_file"
+                  git mv "$file" "$target_file"
+                  renamed=true
+                fi
               fi
             fi
           done
+
+          # Fail the workflow if there were duplicate slug errors
+          if [ "$has_error" = true ]; then
+            echo -e "\n❌ SLUG CONFLICT DETECTED:\n$error_messages"
+            echo "Please use a different slug - another blog post already uses this URL."
+            exit 1
+          fi
 
           echo "renamed=$renamed" >> $GITHUB_OUTPUT
 
