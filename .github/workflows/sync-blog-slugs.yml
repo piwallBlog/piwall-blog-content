@@ -25,8 +25,6 @@ jobs:
           cd content/blog
           renamed=false
           has_error=false
-          error_messages=""
-          redirects_added=""
 
           # Initialize redirects.json if it doesn't exist
           if [ ! -f "redirects.json" ]; then
@@ -48,36 +46,20 @@ jobs:
                 # Check if target file already exists (duplicate slug error)
                 if [ -f "$target_file" ]; then
                   has_error=true
-                  error_messages="${error_messages}ERROR: Cannot rename '$file' to '$target_file' - a file with slug '$slug' already exists!\n"
                   echo "::error::Cannot rename '$file' to '$target_file' - a file with slug '$slug' already exists!"
                 else
                   echo "Renaming: $file -> $target_file"
+                  echo "Adding redirect: $filename -> $slug"
 
-                  # Add redirect from old slug to new slug (for SEO)
-                  # Also update any existing redirects that pointed to the old slug
-                  echo "Adding/updating redirect: $filename -> $slug"
-
-                  python3 -c "
-import json
-with open('redirects.json', 'r') as f:
-    redirects = json.load(f)
-
-old_slug = '$filename'
-new_slug = '$slug'
-
-# Add direct redirect from old to new
-redirects[old_slug] = new_slug
-
-# Update any existing redirects that pointed to the old slug to point to new slug
-for key in list(redirects.keys()):
-    if redirects[key] == old_slug:
-        redirects[key] = new_slug
-        print(f'Updated chain redirect: {key} -> {new_slug}')
-
-with open('redirects.json', 'w') as f:
-    json.dump(redirects, f, indent=2, sort_keys=True)
-"
-                  redirects_added="${redirects_added}$filename -> $slug\n"
+                  # Update redirects.json using jq
+                  # 1. Add new redirect
+                  # 2. Update any existing redirects pointing to old slug
+                  jq --arg old "$filename" --arg new "$slug" '
+                    .[$old] = $new |
+                    to_entries |
+                    map(if .value == $old then .value = $new else . end) |
+                    from_entries
+                  ' redirects.json > redirects.tmp && mv redirects.tmp redirects.json
 
                   git mv "$file" "$target_file"
                   renamed=true
@@ -88,14 +70,8 @@ with open('redirects.json', 'w') as f:
 
           # Fail the workflow if there were duplicate slug errors
           if [ "$has_error" = true ]; then
-            echo -e "\n❌ SLUG CONFLICT DETECTED:\n$error_messages"
             echo "Please use a different slug - another blog post already uses this URL."
             exit 1
-          fi
-
-          # Log redirects added
-          if [ -n "$redirects_added" ]; then
-            echo -e "\n✅ Redirects added to redirects.json:\n$redirects_added"
           fi
 
           echo "renamed=$renamed" >> $GITHUB_OUTPUT
@@ -106,7 +82,5 @@ with open('redirects.json', 'w') as f:
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
           git add -A content/blog/
-          git commit -m "Auto-rename blog files to match custom slugs
-
-Redirects added to preserve SEO for old URLs."
+          git commit -m "Auto-rename blog files to match custom slugs"
           git push
