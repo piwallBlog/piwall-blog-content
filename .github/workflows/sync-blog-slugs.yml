@@ -1,0 +1,53 @@
+name: Sync Blog Filenames with Slugs
+
+on:
+  push:
+    paths:
+      - 'content/blog/*.mdx'
+    branches:
+      - main
+
+jobs:
+  sync-slugs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync filenames with slugs
+        id: sync
+        run: |
+          cd content/blog
+          renamed=false
+
+          for file in *.mdx; do
+            [ -f "$file" ] || continue
+
+            # Extract slug from frontmatter (handles both quoted and unquoted)
+            slug=$(sed -n '/^---$/,/^---$/p' "$file" | grep -m1 "^slug:" | sed 's/^slug:[[:space:]]*//' | tr -d "\"'" | tr -d '[:space:]')
+
+            if [ -n "$slug" ]; then
+              filename="${file%.mdx}"
+
+              if [ "$filename" != "$slug" ]; then
+                echo "Renaming: $file -> ${slug}.mdx"
+                git mv "$file" "${slug}.mdx"
+                renamed=true
+              fi
+            fi
+          done
+
+          echo "renamed=$renamed" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.sync.outputs.renamed == 'true'
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git commit -m "Auto-rename blog files to match custom slugs"
+          git push
