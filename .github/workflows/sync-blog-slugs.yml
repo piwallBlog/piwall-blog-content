@@ -54,15 +54,26 @@ jobs:
                   echo "Renaming: $file -> $target_file"
 
                   # Add redirect from old slug to new slug (for SEO)
-                  echo "Adding redirect: $filename -> $slug"
+                  # Also update any existing redirects that pointed to the old slug
+                  echo "Adding/updating redirect: $filename -> $slug"
 
-                  # Update redirects.json using a temp file approach
-                  # This adds the new redirect while preserving existing ones
                   python3 -c "
 import json
 with open('redirects.json', 'r') as f:
     redirects = json.load(f)
-redirects['$filename'] = '$slug'
+
+old_slug = '$filename'
+new_slug = '$slug'
+
+# Add direct redirect from old to new
+redirects[old_slug] = new_slug
+
+# Update any existing redirects that pointed to the old slug to point to new slug
+for key in list(redirects.keys()):
+    if redirects[key] == old_slug:
+        redirects[key] = new_slug
+        print(f'Updated chain redirect: {key} -> {new_slug}')
+
 with open('redirects.json', 'w') as f:
     json.dump(redirects, f, indent=2, sort_keys=True)
 "
@@ -94,7 +105,7 @@ with open('redirects.json', 'w') as f:
         run: |
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
-          git add content/blog/redirects.json
+          git add -A content/blog/
           git commit -m "Auto-rename blog files to match custom slugs
 
 Redirects added to preserve SEO for old URLs."
