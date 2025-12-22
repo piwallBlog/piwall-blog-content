@@ -26,6 +26,12 @@ jobs:
           renamed=false
           has_error=false
           error_messages=""
+          redirects_added=""
+
+          # Initialize redirects.json if it doesn't exist
+          if [ ! -f "redirects.json" ]; then
+            echo "{}" > redirects.json
+          fi
 
           for file in *.mdx; do
             [ -f "$file" ] || continue
@@ -46,6 +52,22 @@ jobs:
                   echo "::error::Cannot rename '$file' to '$target_file' - a file with slug '$slug' already exists!"
                 else
                   echo "Renaming: $file -> $target_file"
+
+                  # Add redirect from old slug to new slug (for SEO)
+                  echo "Adding redirect: $filename -> $slug"
+
+                  # Update redirects.json using a temp file approach
+                  # This adds the new redirect while preserving existing ones
+                  python3 -c "
+import json
+with open('redirects.json', 'r') as f:
+    redirects = json.load(f)
+redirects['$filename'] = '$slug'
+with open('redirects.json', 'w') as f:
+    json.dump(redirects, f, indent=2, sort_keys=True)
+"
+                  redirects_added="${redirects_added}$filename -> $slug\n"
+
                   git mv "$file" "$target_file"
                   renamed=true
                 fi
@@ -60,6 +82,11 @@ jobs:
             exit 1
           fi
 
+          # Log redirects added
+          if [ -n "$redirects_added" ]; then
+            echo -e "\n✅ Redirects added to redirects.json:\n$redirects_added"
+          fi
+
           echo "renamed=$renamed" >> $GITHUB_OUTPUT
 
       - name: Commit and push changes
@@ -67,5 +94,8 @@ jobs:
         run: |
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
-          git commit -m "Auto-rename blog files to match custom slugs"
+          git add content/blog/redirects.json
+          git commit -m "Auto-rename blog files to match custom slugs
+
+Redirects added to preserve SEO for old URLs."
           git push
