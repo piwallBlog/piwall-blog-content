@@ -19,6 +19,37 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check for duplicate slugs
+        id: check_duplicates
+        run: |
+          cd content/blog
+
+          # Extract all slugs and check for duplicates
+          declare -A slug_files
+          has_duplicate=false
+
+          for file in *.mdx; do
+            [ -f "$file" ] || continue
+
+            slug=$(sed -n '/^---$/,/^---$/p' "$file" | grep -m1 "^slug:" | sed 's/^slug:[[:space:]]*//' | tr -d "\"'" | tr -d '[:space:]')
+
+            if [ -n "$slug" ]; then
+              if [ -n "${slug_files[$slug]}" ]; then
+                has_duplicate=true
+                echo "::error::DUPLICATE SLUG DETECTED: '$slug' is used by both '${slug_files[$slug]}' and '$file'"
+              else
+                slug_files[$slug]="$file"
+              fi
+            fi
+          done
+
+          if [ "$has_duplicate" = true ]; then
+            echo "Please ensure each blog post has a unique slug."
+            exit 1
+          fi
+
+          echo "No duplicate slugs found."
+
       - name: Sync filenames with slugs
         id: sync
         run: |
